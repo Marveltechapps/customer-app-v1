@@ -28,6 +28,8 @@ import ProductCard, { Product } from '../components/features/product/ProductCard
 import ProductVariantModal, { ProductVariant } from '../components/features/product/ProductVariantModal';
 import FloatingCartBar from '../components/features/cart/FloatingCartBar';
 import { useCart } from '../contexts/CartContext';
+import { productService } from '../services/products/productService';
+import { getApiErrorMessage } from '../services/api/types';
 
 // Dummy static data - ready for API replacement
 interface ProductDetail {
@@ -129,19 +131,31 @@ export default function ProductDetailScreen({
   // Placeholder for API integration
   useEffect(() => {
     const loadProductDetail = async () => {
-      if (fetchProductDetail) {
-        setLoading(true);
-        try {
+      setLoading(true);
+      try {
+        if (fetchProductDetail) {
           const data = await fetchProductDetail(productId);
           setProductDetail(data);
           setSelectedVariantId(data.variants[0]?.id || '');
-        } catch (error) {
-          logger.error('Error fetching product detail', error);
-          // Fallback to dummy data on error
+        } else if (productId) {
+          // default behavior: call productService to fetch details
+          const resp = await productService.getProductDetail(productId);
+          if (resp && resp.success && resp.data) {
+            const data = resp.data as ProductDetail;
+            setProductDetail(data);
+            setSelectedVariantId(data.variants[0]?.id || '');
+          } else {
+            setProductDetail(DUMMY_PRODUCT_DETAIL);
+          }
+        } else {
           setProductDetail(DUMMY_PRODUCT_DETAIL);
-        } finally {
-          setLoading(false);
         }
+      } catch (err) {
+        const msg = getApiErrorMessage(err, 'Failed to load product');
+        logger.error('Product detail failed', { message: msg });
+        setProductDetail(DUMMY_PRODUCT_DETAIL);
+      } finally {
+        setLoading(false);
       }
     };
 
@@ -154,9 +168,9 @@ export default function ProductDetailScreen({
         try {
           const data = await fetchSimilarProducts(productId);
           setSimilarProducts(data);
-        } catch (error) {
-          logger.error('Error fetching similar products', error);
-          // Fallback to dummy data on error
+        } catch (err) {
+          const msg = getApiErrorMessage(err, 'Failed to load similar products');
+          logger.error('Similar products failed', { message: msg });
           setSimilarProducts(DUMMY_SIMILAR_PRODUCTS);
         }
       }

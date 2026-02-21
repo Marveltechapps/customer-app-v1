@@ -15,6 +15,7 @@ import NoInternetIcon from '../assets/images/no-internet-icon.svg';
 import type { RootStackParamList } from '../types/navigation';
 import { useNetwork } from '../contexts/NetworkContext';
 import { logger } from '@/utils/logger';
+import { getEnvConfigSafe } from '../config/env';
 
 // Screen data
 const SCREEN_DATA = {
@@ -39,12 +40,39 @@ const NoInternet: React.FC<NoInternetScreenProps> = () => {
     }
   }, [isConnected]);
 
-  // Handle reload button press - manually check connectivity
+  const navigateBack = () => {
+    if (previousRoute) {
+      navigation.navigate(previousRoute.name as never, previousRoute.params as never);
+    } else {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Splash' }],
+      });
+    }
+  };
+
+  // Handle reload button press - check NetInfo and optionally verify with a real request (in case NetInfo is wrong)
   const handleReload = async () => {
     setIsChecking(true);
-    
+
     try {
-      // Check if NetInfo native module is available
+      // 1) Optional reachability check: if API responds, we have internet even if NetInfo says offline
+      try {
+        const { apiBaseUrl } = getEnvConfigSafe();
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        const res = await fetch(apiBaseUrl, { method: 'HEAD', signal: controller.signal, cache: 'no-store' });
+        clearTimeout(timeoutId);
+        if (res.ok || res.status === 401 || res.status === 404) {
+          logger.info('Reachability check succeeded, navigating back');
+          navigateBack();
+          return;
+        }
+      } catch (_) {
+        // Reachability failed; fall back to NetInfo
+      }
+
+      // 2) NetInfo
       if (!NetInfo || typeof NetInfo.fetch !== 'function') {
         logger.error('NetInfo native module is not available');
         alert('Network module not available. Please rebuild the app.');
@@ -52,24 +80,12 @@ const NoInternet: React.FC<NoInternetScreenProps> = () => {
         return;
       }
 
-      // Check current network state
       const state = await NetInfo.fetch();
       const connected = state.isConnected ?? false;
-      
+
       if (connected) {
-        // Connection restored - NetworkContext will handle navigation
-        // But we can also manually navigate if needed
-        if (previousRoute) {
-          navigation.navigate(previousRoute.name as never, previousRoute.params as never);
-        } else {
-          // If no previous route, navigate to Splash
-          navigation.reset({
-            index: 0,
-            routes: [{ name: 'Splash' }],
-          });
-        }
+        navigateBack();
       } else {
-        // Still offline
         logger.info('Still offline');
       }
     } catch (error) {

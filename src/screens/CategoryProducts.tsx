@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -6,6 +6,7 @@ import {
   Platform,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -21,6 +22,11 @@ import ProductVariantModal, { ProductVariant } from '../components/features/prod
 import { useCart } from '../contexts/CartContext';
 import { useDimensions, getSpacing, scale } from '../utils/responsive';
 import { logger } from '@/utils/logger';
+import categoryService, { type CategoryPayloadProduct } from '../services/category/categoryService';
+import { handleHomeLink } from '../utils/navigation/linkHandler';
+import { getApiErrorMessage } from '../services/api/types';
+
+const PLACEHOLDER_IMAGE = require('../assets/images/product-image-1.png');
 
 // Dummy static data - ready for API replacement
 interface SubCategory {
@@ -32,6 +38,7 @@ interface SubCategory {
 interface BannerItem {
   id: string;
   image: any;
+  link?: string | null;
 }
 
 // Dummy sub-categories data
@@ -223,25 +230,127 @@ export default function CategoryProductsScreen({
   const { width: screenWidth } = useDimensions();
   const { cartItems } = useCart();
 
-  // Use params if provided, otherwise use props
-  const finalCategoryName = (params.categoryName as string) || categoryName || 'Fresh Fruits';
-  const finalCategoryId = (params.categoryId as string) || categoryId || '1';
+  // Use params if provided, otherwise use props. Avoid placeholder id so API isn't called with invalid id.
+  const finalCategoryName = (params.categoryName as string) || categoryName || 'Category';
+  const finalCategoryId = (params.categoryId as string) || categoryId || '';
 
-  const [subCategories, setSubCategories] = useState<SubCategory[]>(DUMMY_SUB_CATEGORIES);
-  const [banners, setBanners] = useState<BannerItem[]>(DUMMY_BANNERS);
-  const [selectedSubCategoryId, setSelectedSubCategoryId] = useState<string>(
-    DUMMY_SUB_CATEGORIES[0]?.id || '1'
-  );
-  const [products, setProducts] = useState<Product[]>(
-    DUMMY_PRODUCTS[selectedSubCategoryId] || []
-  );
-  const [loading, setLoading] = useState(false);
+  const [subCategories, setSubCategories] = useState<SubCategory[]>([]);
+  const [banners, setBanners] = useState<BannerItem[]>([]);
+  const [selectedSubCategoryId, setSelectedSubCategoryId] = useState<string | null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [apiProducts, setApiProducts] = useState<CategoryPayloadProduct[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [categoryDisplayName, setCategoryDisplayName] = useState<string | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
+  const initialLoadDone = useRef(false);
   // Track selected variant for each product (for synchronization)
   const [productSelectedVariants, setProductSelectedVariants] = useState<Record<string, string>>({});
 
-  // Placeholder for API integration
+  const mapApiProductToProduct = useCallback((p: CategoryPayloadProduct): Product => ({
+    id: p.id,
+    name: p.name,
+    image: p.images?.[0] ? { uri: p.images[0] } : PLACEHOLDER_IMAGE,
+    price: p.price,
+    originalPrice: p.originalPrice ?? p.price,
+    discount: p.discount ?? '',
+    quantity: p.quantity || (p.variants?.[0]?.size ?? ''),
+  }), []);
+
+  // Category API: load category payload when finalCategoryId is set (and not using fetch props)
+  useEffect(() => {
+    if (fetchSubCategories ?? fetchBanners ?? fetchProducts) {
+      setLoading(false);
+      return;
+    }
+    if (!finalCategoryId || finalCategoryId.trim() === '') {
+      setLoading(false);
+      setError('Select a category from Home to view products.');
+      setCategoryDisplayName(null);
+      setSubCategories([]);
+      setBanners([]);
+      setProducts([]);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    categoryService
+      .getCategoryPayload(finalCategoryId)
+      .then((res) => {
+        if (cancelled || !res?.success || !res.data) return;
+        const { category: _c, subcategories: sc, banners: b, products: pr } = res.data;
+        if (_c?.name) setCategoryDisplayName(_c.name);
+        setSubCategories(
+          sc.map((s) => ({
+            id: s.id,
+            name: s.name,
+            image: s.imageUrl ? { uri: s.imageUrl } : PLACEHOLDER_IMAGE,
+          }))
+        );
+        setBanners(
+          b.map((x) => ({
+            id: x.id,
+            image: x.imageUrl ? { uri: x.imageUrl } : PLACEHOLDER_IMAGE,
+            link: x.link ?? null,
+          }))
+        );
+        setApiProducts(pr);
+        setProducts(pr.map(mapApiProductToProduct));
+        setSelectedSubCategoryId(null);
+        initialLoadDone.current = true;
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          const msg = getApiErrorMessage(err, 'Failed to load category');
+          logger.error('Category payload failed', { message: msg, status: (err as { status?: number })?.status });
+          setError(msg);
+          setCategoryDisplayName(null);
+          setSubCategories(DUMMY_SUB_CATEGORIES);
+          setBanners(DUMMY_BANNERS);
+          setSelectedSubCategoryId(DUMMY_SUB_CATEGORIES[0]?.id ?? null);
+          setProducts(DUMMY_PRODUCTS[DUMMY_SUB_CATEGORIES[0]?.id ?? '1'] ?? []);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [finalCategoryId, fetchSubCategories, fetchBanners, fetchProducts, mapApiProductToProduct]);
+
+  // When user selects a subcategory, refetch products for that subcategory
+  useEffect(() => {
+    if (!initialLoadDone.current || selectedSubCategoryId === null) return;
+    if (fetchProducts) return;
+    let cancelled = false;
+    setLoading(true);
+    categoryService
+      .getCategoryPayload(finalCategoryId, selectedSubCategoryId)
+      .then((res) => {
+        if (cancelled || !res?.success || !res.data) return;
+        setApiProducts(res.data.products);
+        setProducts(res.data.products.map(mapApiProductToProduct));
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          const msg = getApiErrorMessage(err, 'Failed to load products');
+          logger.error('Category products by subcategory failed', { message: msg });
+          setApiProducts([]);
+          setProducts(DUMMY_PRODUCTS[selectedSubCategoryId] ?? []);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [finalCategoryId, selectedSubCategoryId, fetchProducts, mapApiProductToProduct]);
+
+  // Optional fetch props (override API when provided)
   useEffect(() => {
     if (fetchSubCategories) {
       const loadSubCategories = async () => {
@@ -249,12 +358,11 @@ export default function CategoryProductsScreen({
         try {
           const data = await fetchSubCategories();
           setSubCategories(data);
-          if (data.length > 0) {
-            setSelectedSubCategoryId(data[0].id);
-          }
-        } catch (error) {
-          logger.error('Error fetching sub-categories', error);
+          if (data.length > 0) setSelectedSubCategoryId(data[0].id);
+        } catch (err) {
+          logger.error('Error fetching sub-categories', err);
           setSubCategories(DUMMY_SUB_CATEGORIES);
+          setSelectedSubCategoryId(DUMMY_SUB_CATEGORIES[0]?.id ?? null);
         } finally {
           setLoading(false);
         }
@@ -269,8 +377,8 @@ export default function CategoryProductsScreen({
         try {
           const data = await fetchBanners();
           setBanners(data);
-        } catch (error) {
-          logger.error('Error fetching banners', error);
+        } catch (err) {
+          logger.error('Error fetching banners', err);
           setBanners(DUMMY_BANNERS);
         }
       };
@@ -281,21 +389,19 @@ export default function CategoryProductsScreen({
   useEffect(() => {
     if (fetchProducts) {
       const loadProducts = async () => {
+        if (selectedSubCategoryId == null) return;
         setLoading(true);
         try {
           const data = await fetchProducts(selectedSubCategoryId);
           setProducts(data);
-        } catch (error) {
-          logger.error('Error fetching products', error);
-          setProducts(DUMMY_PRODUCTS[selectedSubCategoryId] || []);
+        } catch (err) {
+          logger.error('Error fetching products', err);
+          setProducts(DUMMY_PRODUCTS[selectedSubCategoryId] ?? []);
         } finally {
           setLoading(false);
         }
       };
       loadProducts();
-    } else {
-      // Use dummy data
-      setProducts(DUMMY_PRODUCTS[selectedSubCategoryId] || []);
     }
   }, [selectedSubCategoryId, fetchProducts]);
 
@@ -314,6 +420,13 @@ export default function CategoryProductsScreen({
   const handleSubCategoryPress = useCallback((subCategoryId: string) => {
     setSelectedSubCategoryId(subCategoryId);
   }, []);
+
+  const handleBannerPress = useCallback(
+    (banner: BannerItem) => {
+      if (banner.link) handleHomeLink(banner.link, navigation);
+    },
+    [navigation]
+  );
 
   const handleQuantityPress = useCallback((productId: string) => {
     if (onQuantityPress) {
@@ -419,79 +532,43 @@ export default function CategoryProductsScreen({
   const selectedProduct = products.find((p) => p.id === selectedProductId);
   
   const getProductVariants = (): ProductVariant[] => {
-    if (!selectedProduct) {
-      // Return dummy variants if no product selected
-      return [
-        {
-          id: '1',
-          size: '500 g',
-          image: require('../assets/images/product-image-1.png'),
-          price: 126,
-          originalPrice: 256,
-          discount: '16% OFF',
-          quantity: 0,
-        },
-        {
-          id: '2',
-          size: '1 kg',
-          image: require('../assets/images/product-image-1.png'),
-          price: 126,
-          originalPrice: 256,
-          discount: '16% OFF',
-          quantity: 0,
-        },
-        {
-          id: '3',
-          size: '2 kg',
-          image: require('../assets/images/product-image-1.png'),
-          price: 126,
-          originalPrice: 256,
-          discount: '16% OFF',
-          quantity: 0,
-        },
-      ];
-    }
-    
-    // Get variants for the selected product
-    const variants: ProductVariant[] = [
-      {
-        id: `${selectedProduct.id}-500g`,
-        size: '500 g',
-        image: selectedProduct.image,
-        price: selectedProduct.price,
-        originalPrice: selectedProduct.originalPrice,
-        discount: selectedProduct.discount,
-        quantity: 0,
-      },
-      {
-        id: `${selectedProduct.id}-1kg`,
-        size: '1 kg',
-        image: selectedProduct.image,
-        price: selectedProduct.price * 2,
-        originalPrice: selectedProduct.originalPrice * 2,
-        discount: selectedProduct.discount,
-        quantity: 0,
-      },
-      {
-        id: `${selectedProduct.id}-2kg`,
-        size: '2 kg',
-        image: selectedProduct.image,
-        price: selectedProduct.price * 4,
-        originalPrice: selectedProduct.originalPrice * 4,
-        discount: selectedProduct.discount,
-        quantity: 0,
-      },
+    const dummyVariants: ProductVariant[] = [
+      { id: '1', size: '500 g', image: require('../assets/images/product-image-1.png'), price: 126, originalPrice: 256, discount: '16% OFF', quantity: 0 },
+      { id: '2', size: '1 kg', image: require('../assets/images/product-image-1.png'), price: 126, originalPrice: 256, discount: '16% OFF', quantity: 0 },
+      { id: '3', size: '2 kg', image: require('../assets/images/product-image-1.png'), price: 126, originalPrice: 256, discount: '16% OFF', quantity: 0 },
     ];
-    
-    // Sync quantities from cart
-    return variants.map(v => ({
+    if (!selectedProduct) return dummyVariants;
+
+    const apiProduct = apiProducts.find((p) => p.id === selectedProduct.id);
+    if (apiProduct?.variants?.length) {
+      return apiProduct.variants.map((v) => ({
+        id: v.id,
+        size: v.size,
+        image: selectedProduct.image,
+        price: v.price,
+        originalPrice: v.originalPrice ?? v.price,
+        discount: selectedProduct.discount,
+        quantity: cartItems.find((item) => item.variantId === v.id)?.quantity ?? 0,
+      }));
+    }
+
+    const variants: ProductVariant[] = [
+      { id: `${selectedProduct.id}-500g`, size: '500 g', image: selectedProduct.image, price: selectedProduct.price, originalPrice: selectedProduct.originalPrice, discount: selectedProduct.discount, quantity: 0 },
+      { id: `${selectedProduct.id}-1kg`, size: '1 kg', image: selectedProduct.image, price: selectedProduct.price * 2, originalPrice: selectedProduct.originalPrice * 2, discount: selectedProduct.discount, quantity: 0 },
+      { id: `${selectedProduct.id}-2kg`, size: '2 kg', image: selectedProduct.image, price: selectedProduct.price * 4, originalPrice: selectedProduct.originalPrice * 4, discount: selectedProduct.discount, quantity: 0 },
+    ];
+    return variants.map((v) => ({
       ...v,
-      quantity: cartItems.find(item => item.variantId === v.id)?.quantity || 0,
+      quantity: cartItems.find((item) => item.variantId === v.id)?.quantity ?? 0,
     }));
   };
   
-  // Get variants for a product (used in ProductCard)
+  // Get variants for a product (used in ProductCard) - use API variants when available
   const getVariantsForProduct = (productId: string): Array<{ id: string; size: string }> => {
+    const apiProduct = apiProducts.find((p) => p.id === productId);
+    if (apiProduct?.variants?.length) {
+      return apiProduct.variants.map((v) => ({ id: v.id, size: v.size }));
+    }
     return [
       { id: `${productId}-500g`, size: '500 g' },
       { id: `${productId}-1kg`, size: '1 kg' },
@@ -536,7 +613,7 @@ export default function CategoryProductsScreen({
 
           {/* Title Container */}
           <View style={styles.titleContainer}>
-            <Text style={styles.title}>{finalCategoryName}</Text>
+            <Text style={styles.title}>{categoryDisplayName ?? finalCategoryName}</Text>
           </View>
 
           {/* Search Button */}
@@ -575,6 +652,16 @@ export default function CategoryProductsScreen({
 
           {/* Products Grid */}
           <View style={styles.productsContainer}>
+            {loading && subCategories.length === 0 && !error ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#2D5016" />
+                <Text style={styles.loadingText}>Loading…</Text>
+              </View>
+            ) : error && subCategories.length === 0 ? (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : (
             <ScrollView
               style={styles.productsScroll}
               contentContainerStyle={[
@@ -584,7 +671,13 @@ export default function CategoryProductsScreen({
               showsVerticalScrollIndicator={false}
             >
               {/* Scrollable Banner */}
-              <CategoryBanner banners={banners} />
+              <CategoryBanner banners={banners} onBannerPress={handleBannerPress} />
+
+              {loading ? (
+                <View style={styles.loadingRow}>
+                  <ActivityIndicator size="small" color="#2D5016" />
+                </View>
+              ) : null}
 
               {/* Product Grid - 2 columns */}
               <View style={styles.productsGrid}>
@@ -611,6 +704,7 @@ export default function CategoryProductsScreen({
                 ))}
               </View>
             </ScrollView>
+            )}
           </View>
         </View>
 
@@ -731,6 +825,32 @@ const styles = StyleSheet.create({
   productCardInner: {
     width: '100%',
     alignItems: 'center',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  loadingText: {
+    marginTop: 8,
+    fontSize: 14,
+    color: '#666',
+  },
+  loadingRow: {
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  errorText: {
+    fontSize: 14,
+    color: '#B00020',
+    textAlign: 'center',
   },
 });
 

@@ -15,6 +15,7 @@ interface TopSectionProps {
   deliveryType?: string;
   address?: string;
   searchPlaceholder?: string;
+  heroVideoUrl?: string | null;
   onLocationPress?: () => void;
   onProfilePress?: () => void;
   onSearch?: (text: string) => void;
@@ -31,8 +32,9 @@ const isExpoGo = Constants.appOwnership === 'expo';
 
 export default function TopSection({
   deliveryType = 'Delivery to Home',
-  address = 'Vasantha Bhavan Hotel, 3rd floor.....',
+  address = '',
   searchPlaceholder = 'Search for "Dal" ',
+  heroVideoUrl,
   onLocationPress,
   onProfilePress,
   onSearch,
@@ -44,6 +46,12 @@ export default function TopSection({
   const videoContainerRef = useRef<View>(null);
   const videoRef = useRef<Video>(null);
   const [isMuted, setIsMuted] = useState(false); // Audio state
+
+  // Use backend hero video URL when present, otherwise local asset
+  const hasRemoteVideo = Boolean(heroVideoUrl && heroVideoUrl.trim());
+  const videoSource = hasRemoteVideo ? { uri: heroVideoUrl!.trim() } : homepageVideo;
+  // In Expo Go, only use the real Video component when we have a remote URL (expo-av can play remote URIs)
+  const useVideoPlayer = !isExpoGo || hasRemoteVideo;
 
   // Video container height - explicit height for proper layout
   const VIDEO_CONTAINER_HEIGHT = 400; // Increased by another 20% (300 * 1.20 = 360)
@@ -139,12 +147,12 @@ export default function TopSection({
         />
 
         {/* Video - Absolute position to overlay text */}
-        {!isExpoGo ? (
-          // Video Player (dev/prod builds)
+        {useVideoPlayer ? (
+          // Video Player (dev/prod builds, or Expo Go with remote URL)
           <>
             <Video
               ref={videoRef}
-              source={homepageVideo}
+              source={videoSource}
               style={[
                 styles.backgroundVideo, 
                 { 

@@ -18,6 +18,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { getOnboardingPages, completeOnboarding, type OnboardingPage } from '../services/onboarding/onboardingService';
 import { saveOnboardingCompleted } from '../utils/storage';
+import { getEnvConfigSafe } from '../config/env';
 import { logger } from '@/utils/logger';
 import { scale, verticalScale, getSpacing, useDimensions, scaleFont } from '../utils/responsive';
 
@@ -32,36 +33,6 @@ const ONBOARDING_IMAGES: { [key: number]: any } = {
 const getOnboardingImage = (pageNumber: number) => {
   return ONBOARDING_IMAGES[pageNumber] || ONBOARDING_IMAGES[1]; // Default to page 1 if not found
 };
-
-// Fallback static data - Used if API fails or returns no data
-const FALLBACK_ONBOARDING_PAGES = [
-  {
-    id: 1,
-    pageNumber: 1,
-    title: 'Clean, Healthy Food for Your Family',
-    description: 'You want clean, healthy food for your family. We deliver it.',
-    imageUrl: require('../assets/images/onboarding-screen-1.png'),
-    image: require('../assets/images/onboarding-screen-1.png'),
-  },
-  {
-    id: 2,
-    pageNumber: 2,
-    title: 'Toxin-Free Groceries',
-    description: 'Most groceries contain hidden toxins. SELORG eliminates them.',
-    imageUrl: require('../assets/images/onboarding-screen-2.png'),
-    image: require('../assets/images/onboarding-screen-2.png'),
-  },
-  {
-    id: 3,
-    pageNumber: 3,
-    title: "India's First Lab-Tested Organic App",
-    description:
-      "India's first lab-tested organic grocery app. We're your health guardian.",
-    imageUrl: require('../assets/images/onboarding-screen-3.png'),
-    image: require('../assets/images/onboarding-screen-3.png'),
-    ctaText: 'Begin your clean food journey',
-  },
-];
 
 interface OnboardingProps {
   onComplete?: () => void;
@@ -82,6 +53,7 @@ function Onboarding({ onComplete }: OnboardingProps) {
   const [loading, setLoading] = useState<boolean>(false);
   const [onboardingPages, setOnboardingPages] = useState<OnboardingPage[]>([]);
   const [fetchingPages, setFetchingPages] = useState<boolean>(true);
+  const fallbackNavigateRef = useRef(false);
 
   // Animation values
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -92,12 +64,12 @@ function Onboarding({ onComplete }: OnboardingProps) {
   const titleTranslateY = useRef(new Animated.Value(20)).current; // Staggered text animation
   const descriptionOpacity = useRef(new Animated.Value(1)).current;
   const descriptionTranslateY = useRef(new Animated.Value(20)).current; // Staggered text animation
-  // Pagination dots - initialized with max 3 pages
+  // Pagination dots - support up to 10 pages from API
   const paginationDotScales = useRef(
-    [1, 2, 3].map(() => new Animated.Value(1))
+    Array.from({ length: 10 }, () => new Animated.Value(1))
   ).current;
   const paginationDotOpacities = useRef(
-    [1, 2, 3].map(() => new Animated.Value(0.5))
+    Array.from({ length: 10 }, () => new Animated.Value(0.5))
   ).current;
   
   // Progress animation for active dot (8 seconds)
@@ -146,57 +118,69 @@ function Onboarding({ onComplete }: OnboardingProps) {
   const autoAdvanceTimer = useRef<NodeJS.Timeout | null>(null);
   const currentPageIndexRef = useRef(currentPageIndex);
 
-  // Use fetched pages or fallback to static data
-  // Always ensure we have pages available - use fallback if API fails or returns empty
-  const pages = onboardingPages.length > 0 
-    ? onboardingPages.map((page) => ({
-        ...page,
-        image: page.imageUrl?.startsWith('http') 
-          ? { uri: page.imageUrl } 
-          : getOnboardingImage(page.pageNumber || 1),
-      }))
-    : FALLBACK_ONBOARDING_PAGES;
-  
-  // Ensure pages is always an array with at least one item
-  const safePages = (pages && pages.length > 0) ? pages : FALLBACK_ONBOARDING_PAGES;
+  // Pages from API only (no fallback)
+  const pages = onboardingPages.map((page) => ({
+    ...page,
+    image: page.imageUrl?.startsWith('http')
+      ? { uri: page.imageUrl }
+      : getOnboardingImage(page.pageNumber || 1),
+  }));
+  const safePages = pages;
 
   const currentPage = safePages[currentPageIndex];
   const isLastPage = currentPageIndex === safePages.length - 1;
   const isFirstPage = currentPageIndex === 0;
 
-  // Fetch onboarding pages on mount
-  useEffect(() => {
-    const fetchPages = async () => {
-      try {
-        setFetchingPages(true);
-        const response = await getOnboardingPages();
-        
-        if (response?.data && Array.isArray(response.data) && response.data.length > 0) {
-          // Sort by pageNumber to ensure correct order
-          const sortedPages = response.data.sort((a, b) => 
-            (a.pageNumber || a.order || 0) - (b.pageNumber || b.order || 0)
-          );
-          setOnboardingPages(sortedPages);
-        } else {
-          // Use fallback data if API returns empty or invalid response
-          logger.warn('No onboarding pages from API, using fallback data');
-          setOnboardingPages([]);
-        }
-      } catch (error) {
-        // Network errors are expected in development - use fallback data
-        // Only log as warning since we handle it gracefully
-        if (error && typeof error === 'object' && 'code' in error && error.code === 'NETWORK_ERROR') {
-          logger.info('Network unavailable, using fallback onboarding data');
-        } else {
-          logger.warn('Error fetching onboarding pages, using fallback data', error);
-        }
-        // Use fallback data on error
-        setOnboardingPages([]);
-      } finally {
-        setFetchingPages(false);
-      }
-    };
+  // Fetch onboarding pages from API only; on failure/empty, fallback = move to next screen
+  const fetchPages = async () => {
+    try {
+      setFetchingPages(true);
+      const response = await getOnboardingPages();
 
+      // Backend returns { success, data: [...] }; interceptor returns that body as response
+      const raw = response as { data?: unknown; pages?: unknown };
+      const data = raw?.data ?? raw?.pages;
+      const items = Array.isArray(data) ? data : Array.isArray(response) ? response : [];
+
+      if (items.length > 0) {
+        const sortedPages = [...items].sort(
+          (a, b) =>
+            (Number((a as OnboardingPage).pageNumber) ?? (a as OnboardingPage).order ?? 0) -
+            (Number((b as OnboardingPage).pageNumber) ?? (b as OnboardingPage).order ?? 0)
+        ) as OnboardingPage[];
+        setOnboardingPages(sortedPages);
+        if (__DEV__) {
+          logger.info('Onboarding: loaded', sortedPages.length, 'pages from API');
+        }
+      } else {
+        // Empty pages is valid: backend has no onboarding configured → skip to login
+        if (__DEV__) {
+          logger.debug('Onboarding: no pages configured, skipping to login');
+        }
+        setOnboardingPages([]);
+      }
+    } catch (error: unknown) {
+      const err = error as { code?: string; message?: string };
+      const isNetworkError =
+        err?.code === 'NETWORK_ERROR' ||
+        err?.message === 'Network Error' ||
+        (typeof err?.message === 'string' && err.message.toLowerCase().includes('network'));
+      logger.warn('Error fetching onboarding pages, using fallback (move to next screen)', error);
+      if (__DEV__ && isNetworkError) {
+        const baseUrl = getEnvConfigSafe().apiBaseUrl;
+        logger.warn(
+          'Network Error: app cannot reach the backend. If running on a physical device or Android emulator, ' +
+            'localhost does not point to your machine. Set API_BASE_URL in .env to your machine IP, e.g. ' +
+            'API_BASE_URL=http://192.168.1.x:5000/api/v1/customer. Current baseUrl: ' + baseUrl
+        );
+      }
+      setOnboardingPages([]);
+    } finally {
+      setFetchingPages(false);
+    }
+  };
+
+  useEffect(() => {
     fetchPages();
   }, []);
 
@@ -542,22 +526,28 @@ function Onboarding({ onComplete }: OnboardingProps) {
     );
   }
 
-  // Don't render if no pages available - should never happen due to safePages, but safety check
-  if (!currentPage || safePages.length === 0) {
-    // This should never happen, but if it does, navigate to login
-    useEffect(() => {
-      const timer = setTimeout(() => {
-        navigation.replace('Login');
-      }, 2000);
-      return () => clearTimeout(timer);
-    }, [navigation]);
-    
+  // API returned empty or failed – fallback: move to next screen (mark complete, go to Login)
+  if (safePages.length === 0) {
+    if (!fallbackNavigateRef.current) {
+      fallbackNavigateRef.current = true;
+      (async () => {
+        try {
+          await saveOnboardingCompleted();
+        } catch (e) {
+          logger.warn('Fallback: saveOnboardingCompleted failed', e);
+        }
+        if (onComplete) {
+          onComplete();
+        } else {
+          navigation.replace('Login');
+        }
+      })();
+    }
     return (
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <StatusBar barStyle="dark-content" backgroundColor="#F5F5F5" />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#034703" />
-          <Text style={styles.errorText}>Loading onboarding...</Text>
         </View>
       </SafeAreaView>
     );

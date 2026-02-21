@@ -1,47 +1,36 @@
-/**
- * Product Service
- * Handles product-related API calls
- */
-
 import { api } from '../api/client';
 import { endpoints } from '../api/endpoints';
 import type { ApiResponse, PaginatedResponse } from '../api/types';
-
-export interface Product {
-  id: string;
-  name: string;
-  description: string;
-  price: number;
-  originalPrice?: number;
-  discount?: string;
-  image: string;
-  images?: string[];
-  categoryId: string;
-  categoryName: string;
-  inStock: boolean;
-  variants?: ProductVariant[];
-}
 
 export interface ProductVariant {
   id: string;
   size: string;
   price: number;
   originalPrice?: number;
-  inStock: boolean;
+  inStock?: boolean;
+}
+
+export interface Product {
+  id: string;
+  name: string;
+  description?: string;
+  price: number;
+  originalPrice?: number;
+  discount?: string;
+  image?: string;
+  images?: string[];
+  categoryId?: string;
+  categoryName?: string;
+  inStock?: boolean;
+  variants?: ProductVariant[];
 }
 
 export interface Category {
   id: string;
   name: string;
-  image: string;
-  description?: string;
-  subCategories?: SubCategory[];
-}
-
-export interface SubCategory {
-  id: string;
-  name: string;
   image?: string;
+  description?: string;
+  subCategories?: any[];
 }
 
 export interface ProductListParams {
@@ -66,6 +55,11 @@ export const getProducts = async (params?: ProductListParams): Promise<ApiRespon
 export const getProductById = async (id: string): Promise<ApiResponse<Product>> => {
   return api.get<Product>(endpoints.products.detail(id));
 };
+
+/**
+ * Get product detail (alias)
+ */
+export const getProductDetail = getProductById;
 
 /**
  * Search products
@@ -96,4 +90,3 @@ export const getCategories = async (): Promise<ApiResponse<Category[]>> => {
 export const getCategoryById = async (id: string): Promise<ApiResponse<Category>> => {
   return api.get<Category>(endpoints.categories.detail(id));
 };
-

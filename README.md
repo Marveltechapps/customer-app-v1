@@ -27,10 +27,13 @@ Edit `.env` and set the required values:
 
 ```env
 GOOGLE_MAPS_API_KEY=your-api-key-here
+# For local dev the app talks to the unified backend at /api/v1/customer (no need to set if using defaults)
 API_BASE_URL=https://api.example.com
 API_VERSION=/api/v1
 ENV=development
 ```
+
+**API base URL (same method as HHD and Picker apps):** Config in `app.config.js` + `src/config/env.ts`. Priority: `API_BASE_URL` env → dev default. In development the app defaults to `http://localhost:5000/api/v1/customer` (unified backend). Override with `API_BASE_URL` for production or a different host. **If you see "Network Error" on a physical device or Android emulator**, `localhost` points to the device — set `API_BASE_URL` in `.env` to your machine's LAN IP (e.g. `http://192.168.1.x:5000/api/v1/customer`) and ensure the backend is running and reachable.
 
 **Important**: The `GOOGLE_MAPS_API_KEY` is required. Get your API key from [Google Cloud Console](https://console.cloud.google.com/google/maps-apis).
 

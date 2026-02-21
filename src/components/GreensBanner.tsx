@@ -1,5 +1,8 @@
 import React from 'react';
 import { View, StyleSheet, Image, TouchableOpacity, ImageSourcePropType } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { RootStackNavigationProp } from '../types/navigation';
+import handleHomeLink from '../utils/navigation/linkHandler';
 
 interface GreensBannerProps {
   image?: ImageSourcePropType;
@@ -7,19 +10,35 @@ interface GreensBannerProps {
 }
 
 export default function GreensBanner({ image, onPress }: GreensBannerProps) {
-  // Use provided image or use section-image.png as fallback
-  const bannerImage = image || require('../assets/images/section-image.png');
+  const navigation = useNavigation<RootStackNavigationProp>();
+
+  if (!image) {
+    return null;
+  }
+
+  const handlePress = () => {
+    if (onPress) {
+      onPress();
+      return;
+    }
+    const imgAny = image as any;
+    if (imgAny && typeof imgAny === 'object' && imgAny.link) {
+      handleHomeLink(imgAny.link, navigation);
+      return;
+    }
+    // No link - no-op
+  };
 
   return (
     <View style={styles.container}>
       <View style={styles.bannerWrapper}>
         <TouchableOpacity
           style={styles.bannerContainer}
-          onPress={onPress}
+          onPress={handlePress}
           activeOpacity={0.9}
         >
           <Image
-            source={bannerImage}
+            source={image}
             style={styles.bannerImage}
             resizeMode="cover"
           />

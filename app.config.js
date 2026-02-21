@@ -5,6 +5,21 @@
  * including environment variables and native module plugins.
  */
 
+const path = require('path');
+
+// Backend port (must match selorg-dashboard-backend-v1.1 .env PORT). Do not use 3000 — that is the dashboard/frontend dev server.
+const DEFAULT_BACKEND_PORT = 5000;
+const DEFAULT_DEV_API_BASE_URL = `http://localhost:${DEFAULT_BACKEND_PORT}/api/v1/customer`;
+const HOSTED_API_BASE_URL = 'https://api.selorg.com/api/v1/customer';
+
+// Load .env from project root so ENV and API_BASE_URL are set regardless of cwd
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  require('dotenv').config({ path: path.resolve(__dirname, '.env') });
+} catch (e) {
+  // ignore
+}
+
 // Validate required environment variables
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
 if (!GOOGLE_MAPS_API_KEY) {
@@ -12,16 +27,21 @@ if (!GOOGLE_MAPS_API_KEY) {
   // Continue with build but maps features will not work
 }
 
+// Root assets (splash.png and app_logo.png are placeholders; replace with your brand assets)
+const appIcon = "./assets/app_logo.png";
+const splashImage = "./assets/splash.png";
+
 module.exports = {
   expo: {
     name: "Selorg",
     slug: "frontend",
     version: "0.0.1",
+    jsEngine: "hermes",
     orientation: "portrait",
-    icon: "./assets/app_logo.png",
+    icon: appIcon,
     userInterfaceStyle: "light",
     splash: {
-      image: "./assets/splash.png",
+      image: splashImage,
       resizeMode: "contain",
       backgroundColor: "#ffffff"
     },
@@ -41,7 +61,7 @@ module.exports = {
     },
     android: {
       adaptiveIcon: {
-        foregroundImage: "./assets/app_logo.png",
+        foregroundImage: appIcon,
         backgroundColor: "#ffffff"
       },
       package: "com.selorg.mobile",
@@ -58,7 +78,7 @@ module.exports = {
       ]
     },
     web: {
-      favicon: "./assets/app_logo.png"
+      favicon: appIcon
     },
     plugins: [
       [
@@ -88,7 +108,7 @@ module.exports = {
     ],
     extra: {
       env: process.env.ENV || "development",
-      apiBaseUrl: process.env.API_BASE_URL || "https://api.example.com",
+      apiBaseUrl: process.env.API_BASE_URL || (process.env.ENV === "production" ? HOSTED_API_BASE_URL : DEFAULT_DEV_API_BASE_URL),
       apiVersion: process.env.API_VERSION || "/api/v1",
       enableLogging: process.env.ENABLE_LOGGING !== "false",
       enableAnalytics: process.env.ENABLE_ANALYTICS !== "false",

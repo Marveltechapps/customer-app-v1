@@ -6,34 +6,7 @@ import type { RootStackNavigationProp } from '../../types/navigation';
 import Text from '../common/Text';
 import WellbeingCard, { WellbeingProduct } from '../WellbeingCard';
 import { logger } from '@/utils/logger';
-
-// Dummy static data - ready for API replacement
-const DUMMY_PRODUCTS: WellbeingProduct[] = [
-  {
-    id: '1',
-    name: 'Tiny Tummies',
-    description: 'Wholesome bites for growing champs',
-    image: require('../../assets/images/wellbeing/tiny-tummies.png'),
-  },
-  {
-    id: '2',
-    name: 'Adult Well-being',
-    description: 'Power your hustle\nwith clean eats',
-    image: require('../../assets/images/wellbeing/adult-wellbeing.png'),
-  },
-  {
-    id: '3',
-    name: 'For Her',
-    description: 'Balanced. Nourishing. Empowered',
-    image: require('../../assets/images/wellbeing/for-her.png'),
-  },
-  {
-    id: '4',
-    name: 'Golden Years',
-    description: 'Soft, safe &\nsoul-soothing foods',
-    image: require('../../assets/images/wellbeing/golden-years.png'),
-  },
-];
+import handleHomeLink from '../../utils/navigation/linkHandler';
 
 interface WellbeingSectionProps {
   onProductPress?: (productId: string) => void;
@@ -47,10 +20,10 @@ export default function WellbeingSection({
   starsImage 
 }: WellbeingSectionProps) {
   const navigation = useNavigation<RootStackNavigationProp>();
-  const [products, setProducts] = useState<WellbeingProduct[]>(DUMMY_PRODUCTS);
+  const [products, setProducts] = useState<WellbeingProduct[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const stars = starsImage || require('../../assets/images/wellbeing/stars.png');
+  const stars = starsImage;
 
   // Placeholder for API integration
   useEffect(() => {
@@ -62,8 +35,7 @@ export default function WellbeingSection({
           setProducts(data);
         } catch (error) {
           logger.error('Error fetching wellbeing products', error);
-          // Fallback to dummy data on error
-          setProducts(DUMMY_PRODUCTS);
+          setProducts([]);
         } finally {
           setLoading(false);
         }
@@ -73,17 +45,25 @@ export default function WellbeingSection({
   }, [fetchProducts]);
 
   const handleProductPress = (productId: string) => {
+    const product = products.find((p) => p.id === productId) as any;
     if (onProductPress) {
       onProductPress(productId);
-    } else {
-      // Navigate to tiny-timmies page when "Tiny Tummies" is clicked
-      const product = products.find(p => p.id === productId);
-      if (product && product.name === 'Tiny Tummies') {
-        navigation.navigate('TinyTimmies');
-      } else {
-        logger.info('Wellbeing product pressed', { productId });
-      }
+      return;
     }
+
+    // If product has a link, use link handler
+    if (product && product.link) {
+      handleHomeLink(product.link, navigation);
+      return;
+    }
+
+    // Special-case Tiny Tummies fallback
+    if (product && product.name === 'Tiny Tummies') {
+      navigation.navigate('TinyTimmies');
+      return;
+    }
+
+    logger.info('Wellbeing product pressed', { productId });
   };
 
   // Group products into rows of 2
@@ -97,9 +77,11 @@ export default function WellbeingSection({
       {/* Header */}
       <View style={styles.headerContainer}>
         {/* Stars Image - Positioned absolutely */}
-        <View style={styles.starsContainer}>
-          <Image source={stars} style={styles.starsImage} resizeMode="contain" />
-        </View>
+        {stars ? (
+          <View style={styles.starsContainer}>
+            <Image source={stars} style={styles.starsImage} resizeMode="contain" />
+          </View>
+        ) : null}
 
         <View style={styles.subtitleContainer}>
           {/* Title */}

@@ -2,6 +2,7 @@ import React from 'react';
 import { View, StyleSheet, Image, TouchableOpacity, ImageSourcePropType } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { RootStackNavigationProp } from '../types/navigation';
+import handleHomeLink from '../utils/navigation/linkHandler';
 
 interface SectionImageProps {
   image?: ImageSourcePropType;
@@ -10,16 +11,26 @@ interface SectionImageProps {
 
 export default function SectionImage({ image, onPress }: SectionImageProps) {
   const navigation = useNavigation<RootStackNavigationProp>();
-  // Use provided image or use section-image.png from Figma
-  const imageSource = image || require('../assets/images/section-image.png');
+
+  if (!image) {
+    return null;
+  }
 
   const handlePress = () => {
     if (onPress) {
       onPress();
-    } else {
-      // Navigate to tiny-timmies page when clicked
-      navigation.navigate('TinyTimmies');
+      return;
     }
+
+    // If image is object with link, use link handler
+    const imgAny = image as any;
+    if (imgAny && typeof imgAny === 'object' && imgAny.link) {
+      handleHomeLink(imgAny.link, navigation);
+      return;
+    }
+
+    // Fallback
+    navigation.navigate('TinyTimmies');
   };
 
   return (
@@ -30,7 +41,7 @@ export default function SectionImage({ image, onPress }: SectionImageProps) {
         activeOpacity={0.9}
       >
         <Image
-          source={imageSource}
+          source={image}
           style={styles.image}
           resizeMode="cover"
         />

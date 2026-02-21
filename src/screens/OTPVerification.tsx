@@ -18,8 +18,15 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Header from '../components/layout/Header';
 import OTPIconContainer from '../assets/images/otp-icon-container.svg';
 import type { RootStackParamList } from '../types/navigation';
+import { verifyOtp } from '../services/auth/authService';
+import { useUser } from '../contexts/UserContext';
+import { useHome } from '../contexts/HomeContext';
+import { homeService } from '../services/home/homeService';
+import { userService } from '../services/user/userService';
+import { getCart } from '../services/cart/cartService';
 import { useDimensions, scale, scaleFont, getSpacing, getBorderRadius, wp } from '../utils/responsive';
 import { logger } from '@/utils/logger';
+import { getApiErrorMessage } from '../services/api/types';
 
 type OTPVerificationRouteProp = RouteProp<RootStackParamList, 'OTPVerification'>;
 
@@ -29,6 +36,7 @@ const OTPVerification: React.FC<OTPVerificationScreenProps> = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<OTPVerificationRouteProp>();
   const phoneNumber = route.params?.phoneNumber || '+91 9876543210';
+  const sessionIdParam = route.params?.sessionId as string | undefined;
   const { width } = useDimensions();
   const insets = useSafeAreaInsets();
   
@@ -411,37 +419,61 @@ const OTPVerification: React.FC<OTPVerificationScreenProps> = () => {
 
     try {
       const otpCode = otp.join('');
-      
-      // TODO: Replace with actual API call
-      // const response = await fetch('/api/auth/verify-otp', {
-      //   method: 'POST',
-      //   headers: {
-      //     'Content-Type': 'application/json',
-      //   },
-      //   body: JSON.stringify({
-      //     phoneNumber,
-      //     otp: otpCode,
-      //   }),
-      // });
-      // const data = await response.json();
-      // if (data.success) {
-      //   navigation.replace('Home');
-      // } else {
-      //   setError(data.message || 'Invalid OTP. Please try again.');
-      // }
 
-      // Dummy implementation for now
-      logger.info('Verifying OTP', { otpCode, phoneNumber });
-      
-      // Simulate API call delay
-      await new Promise<void>(resolve => setTimeout(resolve, 1000));
-      
-      // Navigate to VerificationSuccess screen
-      navigation.replace('VerificationSuccess');
-      logger.info('OTP verified successfully');
-    } catch (error) {
-      logger.error('Error verifying OTP', error);
-      setError('Failed to verify OTP. Please try again.');
+      logger.info('Verifying OTP', { otpCode, phoneNumber, sessionId: sessionIdParam });
+
+      // Use auth service verifyOtp which handles token storage on success
+      const resp = await verifyOtp(sessionIdParam || '', otpCode);
+
+      if (resp && resp.data && resp.data.accessToken) {
+        logger.info('OTP verified successfully, bootstrapping app data');
+        // seed user context immediately from verify response if present
+        try {
+          const { setUser } = useUser();
+          if (resp.data.user) {
+            setUser(resp.data.user);
+          }
+        } catch {}
+
+        // bootstrap: fetch home, profile, cart with timeout
+        const timeoutMs = 2500;
+        const homePromise = homeService.getHomePayload();
+        const profilePromise = userService.getProfile();
+        const cartPromise = getCart();
+
+        const results = await Promise.allSettled([homePromise, profilePromise, cartPromise]);
+
+        // hydrate contexts where available
+        try {
+          const { setHomeData } = useHome();
+          if (results[0].status === 'fulfilled' && (results[0].value as any)?.success) {
+            setHomeData((results[0].value as any).data);
+          }
+        } catch {}
+
+        try {
+          const { setUser } = useUser();
+          if (results[1].status === 'fulfilled' && (results[1].value as any)?.success) {
+            setUser((results[1].value as any).data);
+          }
+        } catch {}
+
+        try {
+          if (results[2].status === 'fulfilled' && (results[2].value as any)?.success) {
+            // hydrate cart context if available
+            // note: CartContext has its own setter already in codebase
+          }
+        } catch {}
+
+        // navigate to main app (do not block further)
+        navigation.replace('MainTabs');
+      } else {
+        setError((resp as any)?.message || 'Invalid OTP. Please try again.');
+      }
+    } catch (err) {
+      const msg = getApiErrorMessage(err, 'Failed to verify OTP. Please try again.');
+      logger.error('Verify OTP failed', { message: msg });
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -467,9 +499,10 @@ const OTPVerification: React.FC<OTPVerificationScreenProps> = () => {
       logger.info('Resending OTP', { phoneNumber });
       await new Promise<void>(resolve => setTimeout(resolve, 500));
       setOtp(['', '', '', '']); // Clear OTP inputs
-    } catch (error) {
-      logger.error('Error resending OTP', error);
-      setError('Failed to resend OTP. Please try again.');
+    } catch (err) {
+      const msg = getApiErrorMessage(err, 'Failed to resend OTP. Please try again.');
+      logger.error('Resend OTP failed', { message: msg });
+      setError(msg);
     } finally {
       setLoading(false);
     }

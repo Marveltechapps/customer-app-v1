@@ -11,14 +11,19 @@ import {
   Platform,
   Animated,
   Easing,
+  Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import SelorgLogo from '../assets/images/selorg-logo.svg';
+import { sendOtp } from '../services/auth/authService';
+import { getLegalConfig } from '../services/legal/legalService';
+import type { LoginLegalConfig } from '../services/legal/legalService';
 import CountryFlagIcon from '../assets/images/country-flag-icon.svg';
 import { useDimensions, scale, scaleFont, getSpacing, getBorderRadius, wp } from '../utils/responsive';
 import { logger } from '@/utils/logger';
+import { getApiErrorMessage } from '../services/api/types';
 
 // Dummy static data - Replace with API call later
 const DEFAULT_COUNTRY_CODE = '+91';
@@ -42,7 +47,16 @@ const Login: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isInputFocused, setIsInputFocused] = useState<boolean>(false);
-  
+  const [loginLegal, setLoginLegal] = useState<LoginLegalConfig | null>(null);
+
+  useEffect(() => {
+    getLegalConfig()
+      .then((res) => {
+        if (res.success && res.data?.loginLegal) setLoginLegal(res.data.loginLegal);
+      })
+      .catch((err) => logger.warn('Legal config failed', { message: getApiErrorMessage(err, 'Failed to load legal config') }));
+  }, []);
+
   // Responsive styles memoized
   const responsiveStyles = useMemo(() => ({
     headerSection: {
@@ -268,63 +282,80 @@ const Login: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     setError(null);
 
     try {
-      // TODO: Replace with actual API call
-      // const response = await fetch('/api/auth/send-otp', {
-      //   method: 'POST',
-      //   headers: {
-      //     'Content-Type': 'application/json',
-      //   },
-      //   body: JSON.stringify({
-      //     countryCode,
-      //     phoneNumber,
-      //   }),
-      // });
-      // const data = await response.json();
-      // if (data.success) {
-      //   navigation.navigate('OTPVerification', {
-      //     phoneNumber: `${countryCode}${phoneNumber}`,
-      //   });
-      // } else {
-      //   setError(data.message || 'Failed to send OTP');
-      // }
+      const fullPhone = `${countryCode}${phoneNumber}`.replace(/\s+/g, '');
+      logger.info('Sending OTP', { phoneNumber: fullPhone });
 
-      // Dummy implementation for now
-      logger.info('Sending OTP', { phoneNumber: `${countryCode}${phoneNumber}` });
-      
-      // Simulate API call delay
-      await new Promise<void>(resolve => setTimeout(resolve, 1000));
-      
-      // Navigate to OTP verification screen
-      navigation.navigate('OTPVerification', {
-        phoneNumber: `${countryCode} ${phoneNumber}`,
-      });
-      
-      // Call onLoginSuccess if provided (for backward compatibility)
-      if (onLoginSuccess) {
-        onLoginSuccess(`${countryCode}${phoneNumber}`);
+      const resp = await sendOtp(fullPhone);
+      // Debug: print full response to Metro/Xcode logs for troubleshooting
+      try {
+        // eslint-disable-next-line no-console
+        console.debug('[Login] sendOtp response:', resp);
+      } catch (e) {
+        // ignore
       }
-    } catch (error) {
-      logger.error('Error sending OTP', error);
-      setError('Failed to send OTP. Please try again.');
+
+      // Defensive handling: backend may return sessionId at top-level or inside data.
+      // ApiResponse shape: { success, data?, message?, ... } OR legacy { sessionId, ... }
+      const topLevelSessionId = (resp as any)?.sessionId;
+      const dataSessionId = (resp as any)?.data?.sessionId;
+      const sessionId = topLevelSessionId || dataSessionId || null;
+
+      // If API explicitly failed, show message
+      if (resp && (resp as any).success === false) {
+        const msg = (resp as any).message || (resp as any).error || 'Failed to send OTP';
+        logger.warn('sendOtp responded with success=false', { phoneNumber: fullPhone, resp });
+        setError(msg);
+        return;
+      }
+
+      if (sessionId) {
+        // Navigate to OTP verification screen and pass sessionId (if backend returns it)
+        navigation.navigate('OTPVerification', {
+          phoneNumber: `${countryCode} ${phoneNumber}`,
+          sessionId,
+        } as never);
+
+        // Call onLoginSuccess if provided (for backward compatibility)
+        if (onLoginSuccess) {
+          onLoginSuccess(fullPhone);
+        }
+        return;
+      }
+
+      // If we reach here, no sessionId was returned — log and show fallback error
+      logger.warn('sendOtp did not return sessionId', { phoneNumber: fullPhone, resp });
+      setError((resp as any)?.message || 'Failed to send OTP');
+    } catch (err) {
+      const msg = getApiErrorMessage(err, 'Failed to send OTP. Please try again.');
+      logger.error('Send OTP failed', { message: msg });
+      setError(msg);
     } finally {
       setLoading(false);
     }
   };
 
   const handleTermsPress = () => {
-    // Navigate to Terms of Service screen via GeneralInfo stack
-    navigation.navigate('GeneralInfo', {
-      screen: 'TermsAndConditions',
-    });
-    logger.info('Terms of Service pressed');
+    const terms = loginLegal?.terms;
+    if (terms?.type === 'url' && terms?.url) {
+      Linking.openURL(terms.url).catch((err) => logger.warn('Failed to open terms URL', err));
+    } else {
+      navigation.navigate('GeneralInfo', { screen: 'TermsAndConditions' });
+    }
+    logger.info('Terms pressed');
   };
 
   const handlePrivacyPress = () => {
-    // Navigate to Privacy Policy screen via GeneralInfo stack
-    navigation.navigate('GeneralInfo', {
-      screen: 'PrivacyPolicy',
-    });
-    logger.info('Privacy Policy pressed');
+    const privacy = loginLegal?.privacy;
+    if (privacy?.type === 'url' && privacy?.url) {
+      Linking.openURL(privacy.url).catch((err) => logger.warn('Failed to open privacy URL', err));
+    } else {
+      navigation.navigate('GeneralInfo', { screen: 'PrivacyPolicy' });
+    }
+    logger.info('Privacy pressed');
+  };
+
+  const handleSkipToHome = () => {
+    navigation.replace('MainTabs');
   };
 
   const isValidPhoneNumber = (phone: string): boolean => {
@@ -507,16 +538,24 @@ const Login: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
               {loading ? 'Sending...' : 'Send OTP'}
             </Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.skipButton}
+            onPress={handleSkipToHome}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.skipButtonText}>Skip</Text>
+          </TouchableOpacity>
           
           <View style={[styles.termsContainer, responsiveStyles.termsContainer]}>
             <Text style={[styles.termsText, responsiveStyles.termsText]}>
-              By continuing, you agree to our{' '}
+              {loginLegal?.preamble ?? 'By continuing, you agree to our '}
               <Text style={styles.termsLink} onPress={handleTermsPress}>
-                Terms of Service
-              </Text>{' '}
-              and{' '}
+                {loginLegal?.terms?.label ?? 'Terms of Service'}
+              </Text>
+              {loginLegal?.connector ?? ' and '}
               <Text style={styles.termsLink} onPress={handlePrivacyPress}>
-                Privacy Policy
+                {loginLegal?.privacy?.label ?? 'Privacy Policy'}
               </Text>
             </Text>
           </View>
@@ -724,6 +763,19 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     textAlign: 'center',
     // Font size moved to responsiveStyles
+  },
+  skipButton: {
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: getSpacing(10),
+  },
+  skipButtonText: {
+    fontFamily: 'Inter',
+    fontWeight: '500',
+    fontSize: scaleFont(14, 12, 16),
+    color: '#034703',
+    textAlign: 'center',
   },
   termsContainer: {
     width: '100%',

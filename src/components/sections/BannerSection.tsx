@@ -2,24 +2,17 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { View, StyleSheet, Image, ImageSourcePropType, ScrollView, Animated, TouchableOpacity } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { logger } from '@/utils/logger';
+import handleHomeLink from '../../utils/navigation/linkHandler';
 import type { RootStackNavigationProp } from '../../types/navigation';
 import { getWindowDimensions, getSpacing } from '../../utils/responsive';
 
-// Exact image from Figma - banner-section-297a1c.png
-// Update to use exact image once downloaded: require('../../assets/images/banner-section-297a1c.png')
-const BANNER_IMAGE = require('../../assets/images/banner-section-297a1c.png'); // Placeholder
-
-// Dummy static data - ready for API replacement
-const DUMMY_BANNERS: ImageSourcePropType[] = [
-  BANNER_IMAGE,
-  BANNER_IMAGE,
-  BANNER_IMAGE,
-];
+/** Backend banner shape: { imageUrl, link?, ... }; also accepts ImageSourcePropType */
+export type BannerItem = ImageSourcePropType | { imageUrl: string; link?: string; [k: string]: unknown };
 
 interface BannerSectionProps {
-  banners?: ImageSourcePropType[];
+  banners?: BannerItem[];
   onPress?: (index: number) => void;
-  fetchBannerData?: () => Promise<ImageSourcePropType[]>;
+  fetchBannerData?: () => Promise<BannerItem[]>;
 }
 
 export default function BannerSection({
@@ -28,15 +21,24 @@ export default function BannerSection({
   fetchBannerData,
 }: BannerSectionProps) {
   const navigation = useNavigation<RootStackNavigationProp>();
-  const [bannerImages, setBannerImages] = useState<ImageSourcePropType[]>(
-    banners || DUMMY_BANNERS
+  const [bannerImages, setBannerImages] = useState<BannerItem[]>(
+    banners && banners.length > 0 ? banners : []
   );
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
   const autoScrollTimerRef = useRef<NodeJS.Timeout | null>(null);
   const dotAnimationRef = useRef(new Animated.Value(0)).current;
-  
+
+  // Sync when banners prop updates (e.g. from home payload)
+  useEffect(() => {
+    if (banners && banners.length > 0) {
+      setBannerImages(banners);
+    } else if (!fetchBannerData) {
+      setBannerImages([]);
+    }
+  }, [banners, fetchBannerData]);
+
   // Responsive banner dimensions
   const bannerDimensions = useMemo(() => {
     const screenWidth = getWindowDimensions().width;
@@ -71,7 +73,7 @@ export default function BannerSection({
         } catch (error) {
           logger.error('Error fetching banner data', error);
           // Fallback to provided banners or dummy data
-          setBannerImages(banners || DUMMY_BANNERS);
+          setBannerImages(banners ?? []);
         } finally {
           setLoading(false);
         }
@@ -148,12 +150,20 @@ export default function BannerSection({
   };
 
   const handlePress = (index: number) => {
+    const item = bannerImages[index] as any;
     if (onPress) {
       onPress(index);
-    } else {
-      // Navigate to banner detail screen
-      navigation.navigate('BannerDetail', { title: 'Moringa' });
+      return;
     }
+
+    const bannerLink = item && typeof item === 'object' ? item.link : undefined;
+    if (bannerLink) {
+      handleHomeLink(bannerLink, navigation);
+      return;
+    }
+
+    // Fallback
+    navigation.navigate('BannerDetail', { title: 'Moringa' });
   };
 
   return (
@@ -184,7 +194,7 @@ export default function BannerSection({
             activeOpacity={0.9}
           >
             <Image
-              source={banner}
+              source={(banner as any)?.imageUrl ? { uri: (banner as any).imageUrl } : (banner as any)}
               style={styles.image}
               resizeMode="contain"
             />

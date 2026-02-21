@@ -4,16 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { RootStackNavigationProp } from '../types/navigation';
 import { getWindowDimensions } from '../utils/responsive';
 import { logger } from '@/utils/logger';
-
-// Placeholder image - will be replaced when actual image is downloaded from Figma
-const PLACEHOLDER_IMAGE = require('../assets/images/banner.png');
-
-// Dummy static data - ready for API replacement
-const DUMMY_BANNERS: ImageSourcePropType[] = [
-  PLACEHOLDER_IMAGE,
-  PLACEHOLDER_IMAGE,
-  PLACEHOLDER_IMAGE,
-];
+import handleHomeLink from '../utils/navigation/linkHandler';
 
 interface BannerProps {
   banners?: ImageSourcePropType[];
@@ -29,8 +20,8 @@ export default function Banner({
   fetchBannerData,
 }: BannerProps) {
   const navigation = useNavigation<RootStackNavigationProp>();
-  // If single image is provided, convert to array
-  const initialBanners = image ? [image] : (banners || DUMMY_BANNERS);
+  // If single image is provided, convert to array; otherwise use banners from API (no fallback)
+  const initialBanners = image ? [image] : (banners ?? []);
   
   const [bannerImages, setBannerImages] = useState<ImageSourcePropType[]>(initialBanners);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -47,7 +38,7 @@ export default function Banner({
     return screenWidth - containerPadding - cardGap; // Account for gap
   }, []);
 
-  // Placeholder for API integration
+  // Sync when banners prop updates (e.g. from home payload)
   useEffect(() => {
     if (fetchBannerData) {
       const loadBanners = async () => {
@@ -57,13 +48,14 @@ export default function Banner({
           setBannerImages(data);
         } catch (error) {
           logger.error('Error fetching banner data', error);
-          // Fallback to provided banners or dummy data
-          setBannerImages(banners || (image ? [image] : DUMMY_BANNERS));
+          setBannerImages([]);
         } finally {
           setLoading(false);
         }
       };
       loadBanners();
+    } else {
+      setBannerImages(image ? [image] : (banners ?? []));
     }
   }, [fetchBannerData, banners, image]);
 
@@ -75,12 +67,22 @@ export default function Banner({
   };
 
   const handlePress = (index: number) => {
+    const item = bannerImages[index] as any;
+    // If consumer provided onPress callback, prefer that
     if (onPress) {
       onPress(index);
-    } else {
-      // Navigate to banner detail screen
-      navigation.navigate('BannerDetail', { title: 'Banner' });
+      return;
     }
+
+    // If banner item is an object with a link, use link handler
+    const bannerLink = item && typeof item === 'object' ? item.link : undefined;
+    if (bannerLink) {
+      handleHomeLink(bannerLink, navigation);
+      return;
+    }
+
+    // Fallback: navigate to banner detail screen
+    navigation.navigate('BannerDetail', { title: 'Banner' });
   };
 
   // Ensure banner images exist
@@ -113,7 +115,11 @@ export default function Banner({
             activeOpacity={0.9}
           >
             <Image
-              source={banner}
+              source={
+                (banner as any)?.imageUrl
+                  ? { uri: (banner as any).imageUrl }
+                  : (banner as any)
+              }
               style={styles.bannerImage}
               resizeMode="cover"
             />

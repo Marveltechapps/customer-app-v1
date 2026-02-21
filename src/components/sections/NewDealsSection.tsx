@@ -7,68 +7,21 @@ import ProductVariantModal, { ProductVariant } from '../features/product/Product
 import { useCart } from '../../contexts/CartContext';
 import { logger } from '@/utils/logger';
 
-// Dummy static data - ready for API replacement
-const DUMMY_PRODUCTS: Product[] = [
-  {
-    id: '1',
-    name: 'Shimla Apple',
-    image: require('../../assets/images/product-image-1.png'),
-    price: 126,
-    originalPrice: 256,
-    discount: '16% OFF',
-    quantity: '500 g',
-  },
-  {
-    id: '2',
-    name: 'Fresh Bananas',
-    image: require('../../assets/images/product-image-2.png'),
-    price: 48,
-    originalPrice: 60,
-    discount: '20% OFF',
-    quantity: '1 kg',
-  },
-  {
-    id: '3',
-    name: 'Organic Tomatoes',
-    image: require('../../assets/images/product-image-3.png'),
-    price: 80,
-    originalPrice: 100,
-    discount: '20% OFF',
-    quantity: '500 g',
-  },
-  {
-    id: '4',
-    name: 'Fresh Carrots',
-    image: require('../../assets/images/product-image-4.png'),
-    price: 45,
-    originalPrice: 55,
-    discount: '18% OFF',
-    quantity: '1 kg',
-  },
-  {
-    id: '5',
-    name: 'Green Bell Peppers',
-    image: require('../../assets/images/product-image-5.png'),
-    price: 120,
-    originalPrice: 150,
-    discount: '20% OFF',
-    quantity: '500 g',
-  },
-];
-
 interface NewDealsSectionProps {
+  title?: string;
   onQuantityPress?: (productId: string) => void;
   onAddPress?: (productId: string) => void;
   fetchProducts?: () => Promise<Product[]>;
 }
 
-export default function NewDealsSection({ 
-  onQuantityPress, 
+export default function NewDealsSection({
+  title,
+  onQuantityPress,
   onAddPress,
-  fetchProducts 
+  fetchProducts,
 }: NewDealsSectionProps) {
   const { addToCart, updateQuantity, removeFromCart, cartItems } = useCart();
-  const [products, setProducts] = useState<Product[]>(DUMMY_PRODUCTS);
+  const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
@@ -84,8 +37,7 @@ export default function NewDealsSection({
           setProducts(data);
         } catch (error) {
           logger.error('Error fetching products', error);
-          // Fallback to dummy data on error
-          setProducts(DUMMY_PRODUCTS);
+          setProducts([]);
         } finally {
           setLoading(false);
         }
@@ -272,7 +224,7 @@ export default function NewDealsSection({
       {/* Header */}
       <View style={styles.headerContainer}>
         <View style={styles.titleContainer}>
-          <Text style={styles.title}>Deal in lowest Price</Text>
+          <Text style={styles.title}>{title ?? 'Deal in lowest Price'}</Text>
         </View>
         <View style={styles.dividerContainer}>
           <LinearGradient

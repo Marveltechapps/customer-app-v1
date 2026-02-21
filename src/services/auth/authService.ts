@@ -1,81 +1,38 @@
-/**
- * Auth Service
- * Handles authentication-related API calls
- */
-
 import { api } from '../api/client';
 import { endpoints } from '../api/endpoints';
-import type { ApiResponse } from '../api/types';
+import { tokenManager } from '../api/tokenManager';
 
-export interface LoginRequest {
-  phoneNumber: string;
+export interface SendOtpResponse {
+  sessionId: string;
+  resendCooldownSeconds?: number;
 }
 
-export interface LoginResponse {
-  success: boolean;
-  message: string;
-  sessionId?: string;
-}
-
-export interface VerifyOTPRequest {
-  phoneNumber: string;
-  otp: string;
-  sessionId?: string;
-}
-
-export interface VerifyOTPResponse {
-  success: boolean;
-  token: string;
-  refreshToken: string;
-  user: {
-    id: string;
-    name: string;
-    email?: string;
-    phoneNumber: string;
-  };
-}
-
-export interface RefreshTokenRequest {
-  refreshToken: string;
-}
-
-export interface RefreshTokenResponse {
-  token: string;
-  refreshToken: string;
-}
-
-/**
- * Send OTP to phone number
- */
-export const sendOTP = async (data: LoginRequest): Promise<ApiResponse<LoginResponse>> => {
-  return api.post<LoginResponse>(endpoints.auth.login, data, { skipAuth: true });
+export const sendOtp = async (phoneNumber: string) => {
+  const resp = await api.post<SendOtpResponse>(endpoints.auth.sendOtp, { phoneNumber });
+  // Debug: log raw response to help diagnose mobile issues (can be removed after debugging)
+  try {
+    // Use console to ensure logs are visible in Metro/Xcode
+    // eslint-disable-next-line no-console
+    console.debug('[authService] sendOtp response:', resp);
+  } catch (e) {
+    // ignore
+  }
+  return resp;
 };
 
-/**
- * Verify OTP
- */
-export const verifyOTP = async (data: VerifyOTPRequest): Promise<ApiResponse<VerifyOTPResponse>> => {
-  return api.post<VerifyOTPResponse>(endpoints.auth.verifyOTP, data, { skipAuth: true });
+export const verifyOtp = async (sessionId: string, otp: string) => {
+  const resp = await api.post(endpoints.auth.verifyOtp, { sessionId, otp });
+  // resp.data -> { accessToken, user }
+  if (resp && resp.data && resp.data.accessToken) {
+    await tokenManager.setTokens(resp.data.accessToken, resp.data.refreshToken);
+  }
+  return resp;
 };
 
-/**
- * Resend OTP
- */
-export const resendOTP = async (data: LoginRequest): Promise<ApiResponse<LoginResponse>> => {
-  return api.post<LoginResponse>(endpoints.auth.resendOTP, data, { skipAuth: true });
+export const resendOtp = async (sessionId: string) => {
+  const resp = await api.post(endpoints.auth.resendOtp, { sessionId });
+  return resp;
 };
 
-/**
- * Logout user
- */
-export const logout = async (): Promise<ApiResponse<void>> => {
-  return api.post<void>(endpoints.auth.logout);
-};
-
-/**
- * Refresh access token
- */
-export const refreshToken = async (data: RefreshTokenRequest): Promise<ApiResponse<RefreshTokenResponse>> => {
-  return api.post<RefreshTokenResponse>(endpoints.auth.refreshToken, data, { skipAuth: true });
-};
+export default { sendOtp, verifyOtp, resendOtp };
 

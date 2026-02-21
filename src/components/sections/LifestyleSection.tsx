@@ -2,45 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, Image, ScrollView, ImageSourcePropType } from 'react-native';
 import LifestyleCard, { LifestyleItem } from '../LifestyleCard';
 import { logger } from '@/utils/logger';
-
-// Exact images from Figma - downloaded and ready to use
-const DUMMY_LIFESTYLE_ITEMS: LifestyleItem[] = [
-  {
-    id: '1',
-    title: 'Improve Immunity',
-    image: require('../../assets/images/lifestyle/improve-immunity-49cf52.png'),
-    imagePosition: { x: 0, y: 34, width: 152, height: 111 },
-    titlePosition: { x: 15, y: 12, width: 122 },
-  },
-  {
-    id: '2',
-    title: 'Skin Glow',
-    image: require('../../assets/images/lifestyle/skin-glow-805499.png'),
-    imagePosition: { x: 29, y: 29, width: 96, height: 94 },
-    titlePosition: { x: 43, y: 12, width: 67 },
-  },
-  {
-    id: '3',
-    title: 'Gut Health Basket',
-    image: require('../../assets/images/lifestyle/gut-health-a137ba.png'),
-    imagePosition: { x: 24, y: 26, width: 114, height: 106 },
-    titlePosition: { x: 15, y: 12, width: 123 },
-  },
-  {
-    id: '4',
-    title: 'Detox & Cleanse',
-    image: require('../../assets/images/lifestyle/detox-cleanse-5c5800.png'),
-    imagePosition: { x: 5, y: 40, width: 145, height: 76 },
-    titlePosition: { x: 21, y: 12, width: 111 },
-  },
-  {
-    id: '5',
-    title: 'Muscle Recovery',
-    image: require('../../assets/images/lifestyle/muscle-recovery.png'),
-    imagePosition: { x: 21, y: 20, width: 106, height: 106 },
-    titlePosition: { x: 21, y: 12, width: 116 },
-  },
-];
+import handleHomeLink from '../../utils/navigation/linkHandler';
+import { useNavigation } from '@react-navigation/native';
+import type { RootStackNavigationProp } from '../../types/navigation';
 
 interface LifestyleSectionProps {
   onItemPress?: (itemId: string) => void;
@@ -53,11 +17,10 @@ export default function LifestyleSection({
   fetchItems,
   headerImage,
 }: LifestyleSectionProps) {
-  const [items, setItems] = useState<LifestyleItem[]>(DUMMY_LIFESTYLE_ITEMS);
+  const navigation = useNavigation<RootStackNavigationProp>();
+  const [items, setItems] = useState<LifestyleItem[]>([]);
   const [loading, setLoading] = useState(false);
-
-  // Use provided header image or load exact image from Figma
-  const headerImg: ImageSourcePropType = headerImage || require('../../assets/images/lifestyle/lifestyle-header.png');
+  const headerImg = headerImage;
 
   // Placeholder for API integration
   useEffect(() => {
@@ -69,8 +32,7 @@ export default function LifestyleSection({
           setItems(data);
         } catch (error) {
           logger.error('Error fetching lifestyle items', error);
-          // Fallback to dummy data on error
-          setItems(DUMMY_LIFESTYLE_ITEMS);
+          setItems([]);
         } finally {
           setLoading(false);
         }
@@ -80,11 +42,16 @@ export default function LifestyleSection({
   }, [fetchItems]);
 
   const handleItemPress = (itemId: string) => {
+    const item = items.find((i) => i.id === itemId) as any;
     if (onItemPress) {
       onItemPress(itemId);
-    } else {
-      logger.info('Lifestyle item pressed', { itemId });
+      return;
     }
+    if (item && item.link) {
+      handleHomeLink(item.link, navigation);
+      return;
+    }
+    logger.info('Lifestyle item pressed', { itemId });
   };
 
   return (
@@ -93,9 +60,11 @@ export default function LifestyleSection({
       <View style={styles.backgroundShape} />
 
       {/* Header Image */}
-      <View style={styles.headerImageContainer}>
-        <Image source={headerImg} style={styles.headerImage} resizeMode="cover" />
-      </View>
+      {headerImg ? (
+        <View style={styles.headerImageContainer}>
+          <Image source={headerImg} style={styles.headerImage} resizeMode="cover" />
+        </View>
+      ) : null}
 
       {/* Lifestyle Cards - Horizontal Scroll */}
       <ScrollView

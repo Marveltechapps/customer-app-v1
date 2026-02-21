@@ -10,8 +10,10 @@ import CategoryCard from '../components/CategoryCard';
 import FloatingCartBar from '../components/features/cart/FloatingCartBar';
 import { useDimensions, getSpacing, scale } from '../utils/responsive';
 import { logger } from '@/utils/logger';
+import { homeService } from '../services/home/homeService';
 
-// Dummy static data - ready for API replacement
+const PLACEHOLDER_IMAGE_URI = 'https://placehold.co/200x200?text=No+Image';
+
 interface Category {
   id: string;
   name: string;
@@ -23,6 +25,25 @@ interface CategoryGroup {
   title: string;
   categories: Category[];
 }
+
+/** Map home API payload to CategoryGroup[] for this screen */
+async function fetchCategoryGroupsFromHome(): Promise<CategoryGroup[]> {
+  const res = await homeService.getHomePayload();
+  const data = res?.data ?? res;
+  const rawCategories = data?.categories ?? [];
+  const sectionTitle = data?.config?.categorySectionTitle ?? 'Grocery & Kitchen';
+  if (!Array.isArray(rawCategories) || rawCategories.length === 0) {
+    return [];
+  }
+  const categories: Category[] = rawCategories.map((c: any) => ({
+    id: String(c._id ?? c.id),
+    name: c.name ?? '',
+    image: { uri: c.imageUrl || PLACEHOLDER_IMAGE_URI },
+  }));
+  return [{ id: 'main', title: sectionTitle, categories }];
+}
+
+// Fallback static data when API fails or returns empty (e.g. DB not seeded)
 
 // Dummy categories data - organized in groups
 const DUMMY_CATEGORY_GROUPS: CategoryGroup[] = [
@@ -57,8 +78,8 @@ export default function CategoriesScreen({
   onSearchPress,
 }: CategoriesScreenProps) {
   const navigation = useNavigation<RootStackNavigationProp>();
-  const [categoryGroups, setCategoryGroups] = useState<CategoryGroup[]>(DUMMY_CATEGORY_GROUPS);
-  const [loading, setLoading] = useState(false);
+  const [categoryGroups, setCategoryGroups] = useState<CategoryGroup[]>([]);
+  const [loading, setLoading] = useState(true);
   
   // Calculate responsive card width for 3-column grid
   const { width: screenWidth } = useDimensions();
@@ -71,35 +92,41 @@ export default function CategoriesScreen({
   const headerOpacity = useRef(new Animated.Value(0)).current;
   const headerTranslateY = useRef(new Animated.Value(-20)).current;
 
-  // Calculate total number of category cards for animations
+  // Calculate total number of category cards for animations (cap for ref stability)
   const totalCategories = categoryGroups.reduce((sum, group) => sum + group.categories.length, 0);
+  const MAX_ANIM_CARDS = 100;
   
-  // Create animation refs for each category card
+  // Create animation refs for each category card (fixed max so ref is stable after load)
   const cardAnimations = useRef(
-    Array.from({ length: totalCategories }, () => ({
+    Array.from({ length: MAX_ANIM_CARDS }, () => ({
       opacity: new Animated.Value(0),
       scale: new Animated.Value(0.9),
     }))
   ).current;
 
-  // Placeholder for API integration
+  // Load categories from backend: use fetchCategories prop if provided, else home API
   useEffect(() => {
-    if (fetchCategories) {
-      const loadCategories = async () => {
-        setLoading(true);
-        try {
-          const data = await fetchCategories();
-          setCategoryGroups(data);
-        } catch (error) {
-          logger.error('Error fetching categories', error);
-          // Fallback to dummy data on error
-          setCategoryGroups(DUMMY_CATEGORY_GROUPS);
-        } finally {
-          setLoading(false);
+    let cancelled = false;
+    const loadCategories = async () => {
+      setLoading(true);
+      try {
+        const data = fetchCategories
+          ? await fetchCategories()
+          : await fetchCategoryGroupsFromHome();
+        if (!cancelled) {
+          setCategoryGroups(Array.isArray(data) && data.length > 0 ? data : DUMMY_CATEGORY_GROUPS);
         }
-      };
-      loadCategories();
-    }
+      } catch (error) {
+        logger.error('Error fetching categories', error);
+        if (!cancelled) setCategoryGroups(DUMMY_CATEGORY_GROUPS);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    loadCategories();
+    return () => {
+      cancelled = true;
+    };
   }, [fetchCategories]);
 
   // Animate header and cards when screen is focused
@@ -163,8 +190,7 @@ export default function CategoriesScreen({
     if (onCategoryPress) {
       onCategoryPress(categoryId);
     } else {
-      // Find category name from dummy data
-      const category = DUMMY_CATEGORY_GROUPS[0]?.categories.find((cat) => cat.id === categoryId);
+      const category = categoryGroups.flatMap((g) => g.categories).find((cat) => cat.id === categoryId);
       const categoryName = category?.name || 'Category';
       navigation.navigate('CategoryProducts', {
         categoryId,
@@ -210,6 +236,12 @@ export default function CategoriesScreen({
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <Text style={styles.loadingText}>Loading categories…</Text>
+            </View>
+          ) : (
+          <>
           {/* Category Groups */}
           {categoryGroups.map((group, groupIndex) => {
             // Group categories into rows of 3
@@ -247,7 +279,7 @@ export default function CategoriesScreen({
                     <View key={rowIndex} style={styles.row}>
                       {row.map((category, categoryIndexInRow) => {
                         const currentCardIndex = cardIndex + rowIndex * 3 + categoryIndexInRow;
-                        const anim = cardAnimations[currentCardIndex];
+                        const anim = cardAnimations[currentCardIndex] ?? cardAnimations[0];
                         return (
                           <Animated.View
                             key={category.id}
@@ -275,6 +307,8 @@ export default function CategoriesScreen({
               </View>
             );
           })}
+          </>
+          )}
         </ScrollView>
 
         {/* Floating Cart Bar - 4px above bottom nav bar */}
@@ -327,6 +361,16 @@ const styles = StyleSheet.create({
     height: 20,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  loadingContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    fontFamily: 'Inter',
+    fontSize: 14,
+    color: '#666',
   },
   scrollView: {
     flex: 1,

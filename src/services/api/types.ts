@@ -18,6 +18,20 @@ export interface ApiError {
   errors?: Record<string, string[]>;
 }
 
+/**
+ * Get a user-facing message from any API error (normalized ApiError or axios error).
+ * Use this in catch blocks so 404/400 show the server message consistently.
+ */
+export function getApiErrorMessage(err: unknown, fallback = 'Something went wrong'): string {
+  if (err == null) return fallback;
+  const o = err as Record<string, unknown>;
+  if (typeof o?.message === 'string' && o.message) return o.message;
+  const data = o?.response?.data as Record<string, unknown> | undefined;
+  if (data && typeof data?.message === 'string' && data.message) return data.message;
+  if (typeof o?.error === 'string' && o.error) return o.error;
+  return fallback;
+}
+
 export interface PaginatedResponse<T> {
   data: T[];
   pagination: {

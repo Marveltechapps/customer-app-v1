@@ -78,3 +78,41 @@ yarn-error.log
 .env
 .env.local
 .env.*.local
+
+# Backend
+backend/dist
+backend/node_modules
+backend/.env
+
+# IDE / editor (not needed for production)
+.vscode/
+*.swp
+*.swo
+*~
+
+# Cursor
+.cursor/
+.cursorrules
+.cursorignore
+
+# Expo (local cache / dev)
+.expo/
+
+# Logs and temp
+*.log
+*.tmp
+*.temp
+
+# OS
+Thumbs.db
+
+# Local Ruby / Bundler
+.bundle/
+
+# App build outputs (binaries)
+apk/
+*.apk
+
+# Dev / tooling (not needed for production)
+postman/
+scripts/

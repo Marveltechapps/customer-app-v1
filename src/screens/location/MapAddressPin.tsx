@@ -44,11 +44,11 @@ const MapAddressPin: React.FC = () => {
         // const data = await response.json();
         // setSelectedLocation(data.location);
 
-        // Using dummy data for now
-        setSelectedLocation(location);
+        // Using route param or dummy fallback
+        setSelectedLocation(routeLocation);
       } catch (error) {
         logger.error('Error fetching location details', error);
-        setSelectedLocation(location);
+        setSelectedLocation(routeLocation);
       } finally {
         setLoading(false);
       }

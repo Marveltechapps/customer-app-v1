@@ -3,95 +3,114 @@
  * Centralized endpoint definitions
  */
 
-const API_VERSION = '/api/v1';
+/** Paths relative to base URL (base is e.g. http://localhost:5000/api/v1/customer) */
+const P = '';
 
 export const endpoints = {
   // Auth endpoints
   auth: {
-    login: `${API_VERSION}/auth/login`,
-    verifyOTP: `${API_VERSION}/auth/verify-otp`,
-    resendOTP: `${API_VERSION}/auth/resend-otp`,
-    logout: `${API_VERSION}/auth/logout`,
-    refreshToken: `${API_VERSION}/auth/refresh`,
+    login: `${P}/auth/login`,
+    // OTP flow
+    sendOtp: `${P}/auth/send-otp`,
+    verifyOtp: `${P}/auth/verify-otp`,
+    resendOtp: `${P}/auth/resend-otp`,
+    verifyOTP: `${P}/auth/verify-otp`,
+    resendOTP: `${P}/auth/resend-otp`,
+    logout: `${P}/auth/logout`,
+    refreshToken: `${P}/auth/refresh`,
   },
 
   // User endpoints
   user: {
-    profile: `${API_VERSION}/user/profile`,
-    updateProfile: `${API_VERSION}/user/profile`,
-    changePassword: `${API_VERSION}/user/change-password`,
+    profile: `${P}/user/profile`,
+    updateProfile: `${P}/user/profile`,
+    changePassword: `${P}/user/change-password`,
   },
 
   // Product endpoints
   products: {
-    list: `${API_VERSION}/products`,
-    detail: (id: string) => `${API_VERSION}/products/${id}`,
-    search: `${API_VERSION}/products/search`,
-    byCategory: (categoryId: string) => `${API_VERSION}/products/category/${categoryId}`,
+    list: `${P}/products`,
+    detail: (id: string) => `${P}/products/${id}`,
+    search: `${P}/products/search`,
+    byCategory: (categoryId: string) => `${P}/products/category/${categoryId}`,
   },
 
   // Category endpoints
   categories: {
-    list: `${API_VERSION}/categories`,
-    detail: (id: string) => `${API_VERSION}/categories/${id}`,
+    list: `${P}/categories`,
+    detail: (id: string) => `${P}/categories/${id}`,
   },
 
   // Cart endpoints
   cart: {
-    get: `${API_VERSION}/cart`,
-    addItem: `${API_VERSION}/cart/items`,
-    updateItem: (itemId: string) => `${API_VERSION}/cart/items/${itemId}`,
-    removeItem: (itemId: string) => `${API_VERSION}/cart/items/${itemId}`,
-    clear: `${API_VERSION}/cart/clear`,
+    get: `${P}/cart`,
+    addItem: `${P}/cart/items`,
+    updateItem: (itemId: string) => `${P}/cart/items/${itemId}`,
+    removeItem: (itemId: string) => `${P}/cart/items/${itemId}`,
+    clear: `${P}/cart/clear`,
   },
 
   // Order endpoints
   orders: {
-    list: `${API_VERSION}/orders`,
-    detail: (id: string) => `${API_VERSION}/orders/${id}`,
-    create: `${API_VERSION}/orders`,
-    cancel: (id: string) => `${API_VERSION}/orders/${id}/cancel`,
-    rate: (id: string) => `${API_VERSION}/orders/${id}/rate`,
-    status: (id: string) => `${API_VERSION}/orders/${id}/status`,
+    list: `${P}/orders`,
+    detail: (id: string) => `${P}/orders/${id}`,
+    create: `${P}/orders`,
+    cancel: (id: string) => `${P}/orders/${id}/cancel`,
+    rate: (id: string) => `${P}/orders/${id}/rate`,
+    status: (id: string) => `${P}/orders/${id}/status`,
   },
 
   // Address endpoints
   addresses: {
-    list: `${API_VERSION}/addresses`,
-    create: `${API_VERSION}/addresses`,
-    update: (id: string) => `${API_VERSION}/addresses/${id}`,
-    delete: (id: string) => `${API_VERSION}/addresses/${id}`,
-    setDefault: (id: string) => `${API_VERSION}/addresses/${id}/default`,
+    list: `${P}/addresses`,
+    default: `${P}/addresses/default`,
+    create: `${P}/addresses`,
+    update: (id: string) => `${P}/addresses/${id}`,
+    delete: (id: string) => `${P}/addresses/${id}`,
+    setDefault: (id: string) => `${P}/addresses/${id}/default`,
   },
 
   // Payment endpoints
   payments: {
-    methods: `${API_VERSION}/payments/methods`,
-    addMethod: `${API_VERSION}/payments/methods`,
-    removeMethod: (id: string) => `${API_VERSION}/payments/methods/${id}`,
-    setDefault: (id: string) => `${API_VERSION}/payments/methods/${id}/default`,
+    methods: `${P}/payments/methods`,
+    addMethod: `${P}/payments/methods`,
+    removeMethod: (id: string) => `${P}/payments/methods/${id}`,
+    setDefault: (id: string) => `${P}/payments/methods/${id}/default`,
   },
 
   // Coupon endpoints
   coupons: {
-    list: `${API_VERSION}/coupons`,
-    validate: `${API_VERSION}/coupons/validate`,
-    apply: `${API_VERSION}/coupons/apply`,
+    list: `${P}/coupons`,
+    validate: `${P}/coupons/validate`,
+    apply: `${P}/coupons/apply`,
   },
 
   // Notification endpoints
   notifications: {
-    list: `${API_VERSION}/notifications`,
-    markRead: (id: string) => `${API_VERSION}/notifications/${id}/read`,
-    markAllRead: `${API_VERSION}/notifications/read-all`,
+    list: `${P}/notifications`,
+    markRead: (id: string) => `${P}/notifications/${id}/read`,
+    markAllRead: `${P}/notifications/read-all`,
   },
 
   // Onboarding endpoints
   onboarding: {
-    pages: `${API_VERSION}/onboarding/pages`,
-    pageByNumber: (pageNumber: number) => `${API_VERSION}/onboarding/pages/${pageNumber}`,
-    complete: `${API_VERSION}/onboarding/complete`,
-    status: `${API_VERSION}/onboarding/status`,
+    pages: `${P}/onboarding/pages`,
+    pageByNumber: (pageNumber: number) => `${P}/onboarding/pages/${pageNumber}`,
+    complete: `${P}/onboarding/complete`,
+    status: `${P}/onboarding/status`,
+  },
+ 
+  // Home endpoints
+  home: {
+    payload: `${P}/home`,
+  },
+
+  // Legal (Terms, Privacy, login footer config)
+  legal: {
+    config: `${P}/legal/config`,
+    terms: `${P}/legal/terms`,
+    privacy: `${P}/legal/privacy`,
+    accept: `${P}/legal/accept`,
   },
 } as const;
 

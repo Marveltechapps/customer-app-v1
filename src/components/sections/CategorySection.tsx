@@ -15,23 +15,10 @@ interface Category {
 interface CategorySectionProps {
   title?: string;
   onCategoryPress?: (categoryId: string) => void;
+  categories?: Category[]; // optional external categories from backend
 }
 
-const categories: Category[] = [
-  { id: '1', name: 'Fresh Vegetables', image: require('../../assets/images/categories/fresh-vegetables.png') },
-  { id: '2', name: 'Fresh Fruits', image: require('../../assets/images/categories/fresh-fruits.png') },
-  { id: '3', name: 'Dairy, Bread\nand Eggs', image: require('../../assets/images/categories/dairy-bread-eggs.png') },
-  { id: '4', name: 'Atta, Rice and Dal', image: require('../../assets/images/categories/atta-rice-dal.png') },
-  { id: '5', name: 'Oil and Ghee', image: require('../../assets/images/categories/oil-ghee.png') },
-  { id: '6', name: 'Masalas and\nWhole Spices', image: require('../../assets/images/categories/masalas-spices.png') },
-  { id: '7', name: 'Salt, Sugar\nand Jaggery', image: require('../../assets/images/categories/salt-sugar-jaggery.png') },
-  { id: '8', name: 'Dry Fruits\nand Seeds', image: require('../../assets/images/categories/dry-fruits-seeds.png') },
-  { id: '9', name: 'Sauces and spreads', image: require('../../assets/images/categories/sauces-spreads.png') },
-  { id: '10', name: 'Tea and coffee', image: require('../../assets/images/categories/tea-coffee.png') },
-  { id: '11', name: 'Vermicelli\nand Noodles', image: require('../../assets/images/categories/vermicelli-noodles.png') },
-];
-
-export default function CategorySection({ title = 'Grocery & Kitchen', onCategoryPress }: CategorySectionProps) {
+export default function CategorySection({ title = 'Grocery & Kitchen', onCategoryPress, categories: externalCategories }: CategorySectionProps) {
   const navigation = useNavigation<RootStackNavigationProp>();
   const { width: screenWidth } = useWindowDimensions();
   
@@ -49,13 +36,15 @@ export default function CategorySection({ title = 'Grocery & Kitchen', onCategor
     return gap;
   }, [screenWidth]);
   
+  const sourceCategories = externalCategories ?? [];
+
   const handleCategoryPress = (categoryId: string) => {
     try {
       if (onCategoryPress) {
         onCategoryPress(categoryId);
       } else {
         // Find category name
-        const category = categories.find((cat) => cat.id === categoryId);
+        const category = sourceCategories.find((cat) => cat.id === categoryId);
         const categoryName = category?.name || 'Category';
         navigation.navigate('CategoryProducts', {
           categoryId,
@@ -70,8 +59,8 @@ export default function CategorySection({ title = 'Grocery & Kitchen', onCategor
 
   // Group categories into rows of 3
   const rows: Category[][] = [];
-  for (let i = 0; i < categories.length; i += 3) {
-    rows.push(categories.slice(i, i + 3));
+  for (let i = 0; i < sourceCategories.length; i += 3) {
+    rows.push(sourceCategories.slice(i, i + 3));
   }
 
   return (

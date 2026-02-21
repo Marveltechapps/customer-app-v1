@@ -7,13 +7,10 @@ interface OrganicTaglineSectionProps {
   tagline?: string;
 }
 
-// Default icon from assets
-const DEFAULT_ICON = require('../../assets/images/organic-tagline-icon.png');
-
-export default function OrganicTaglineSection({
-  icon,
-  tagline = 'Organic in Minutes, Freshness Always',
-}: OrganicTaglineSectionProps) {
+export default function OrganicTaglineSection({ icon, tagline }: OrganicTaglineSectionProps) {
+  if (!tagline) {
+    return null;
+  }
   // Responsive dimensions
   const responsiveDimensions = useMemo(() => {
     const containerPadding = getSpacing(16) * 2; // 16px on each side
@@ -56,11 +53,9 @@ export default function OrganicTaglineSection({
             },
           ]}
         >
-          <Image
-            source={icon || DEFAULT_ICON}
-            style={styles.icon}
-            resizeMode="contain"
-          />
+          {icon ? (
+          <Image source={icon} style={styles.icon} resizeMode="contain" />
+        ) : null}
         </View>
       </View>
     </View>

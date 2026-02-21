@@ -4,6 +4,9 @@ import { NavigationContainerRef } from '@react-navigation/native';
 import type { RootStackParamList } from '../types/navigation';
 import { logger } from '@/utils/logger';
 
+/** Delay before showing offline screen after NetInfo reports offline (avoids false positives on simulator / brief flaps). */
+const OFFLINE_DEBOUNCE_MS = 2500;
+
 interface NetworkContextType {
   isConnected: boolean | null;
   previousRoute: { name: keyof RootStackParamList; params?: any } | null;
@@ -17,6 +20,7 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [previousRoute, setPreviousRoute] = useState<{ name: keyof RootStackParamList; params?: any } | null>(null);
   const navigationRef = useRef<NavigationContainerRef<RootStackParamList> | null>(null);
   const isNavigatingRef = useRef<boolean>(false);
+  const offlineDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const setNavigationRef = useCallback((ref: NavigationContainerRef<RootStackParamList> | null) => {
     navigationRef.current = ref;
@@ -29,7 +33,7 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return;
     }
 
-    // Get initial network state
+    // Get initial network state (don't treat first result as final; some platforms report false then true)
     const fetchInitialNetworkState = async () => {
       try {
         const state = await NetInfo.fetch();
@@ -39,16 +43,37 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setIsConnected(null);
       }
     };
-    
+
     fetchInitialNetworkState();
+
+    const tryNavigateToNoInternet = () => {
+      if (!navigationRef.current || isNavigatingRef.current) return;
+      const currentRoute = navigationRef.current.getCurrentRoute();
+      if (currentRoute?.name === 'NoInternet') return;
+
+      setPreviousRoute((prevRoute) => {
+        if (!prevRoute) {
+          return {
+            name: currentRoute?.name as keyof RootStackParamList,
+            params: currentRoute?.params,
+          };
+        }
+        return prevRoute;
+      });
+      isNavigatingRef.current = true;
+      navigationRef.current.navigate('NoInternet' as never);
+      setTimeout(() => {
+        isNavigatingRef.current = false;
+      }, 500);
+    };
 
     // Subscribe to network state changes
     const unsubscribe = NetInfo.addEventListener((state: NetInfoState) => {
       const connected = state.isConnected ?? false;
-      
+
       setIsConnected((prevConnected) => {
         const wasConnected = prevConnected;
-        
+
         // Only handle navigation if we have a navigation ref
         if (!navigationRef.current) {
           return connected;
@@ -56,60 +81,63 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
         const currentRoute = navigationRef.current.getCurrentRoute();
 
-        // If we just went offline
+        // If we just went offline: debounce before showing NoInternet (avoids simulator/brief flaps)
         if (!connected && wasConnected && currentRoute?.name !== 'NoInternet') {
-          // Store the current route to return to later
-          setPreviousRoute((prevRoute) => {
-            // Only update if we don't already have a previous route
-            if (!prevRoute) {
-              return {
-                name: currentRoute?.name as keyof RootStackParamList,
-                params: currentRoute?.params,
-              };
-            }
-            return prevRoute;
-          });
-          
-          // Navigate to NoInternet screen
-          if (!isNavigatingRef.current) {
-            isNavigatingRef.current = true;
-            navigationRef.current.navigate('NoInternet' as never);
-            setTimeout(() => {
-              isNavigatingRef.current = false;
-            }, 500);
+          if (offlineDebounceRef.current) {
+            clearTimeout(offlineDebounceRef.current);
+            offlineDebounceRef.current = null;
           }
+          offlineDebounceRef.current = setTimeout(async () => {
+            offlineDebounceRef.current = null;
+            try {
+              const recheck = await NetInfo.fetch();
+              if (recheck.isConnected ?? false) {
+                setIsConnected(true);
+                return;
+              }
+            } catch {
+              // ignore
+            }
+            tryNavigateToNoInternet();
+          }, OFFLINE_DEBOUNCE_MS);
         }
-        
+
         // If we just came back online
         if (connected && !wasConnected && currentRoute?.name === 'NoInternet') {
-          // Navigate back to the previous route
+          if (offlineDebounceRef.current) {
+            clearTimeout(offlineDebounceRef.current);
+            offlineDebounceRef.current = null;
+          }
           if (!isNavigatingRef.current) {
             isNavigatingRef.current = true;
-            
+
             setPreviousRoute((storedRoute) => {
               if (storedRoute && navigationRef.current) {
                 navigationRef.current.navigate(storedRoute.name as never, storedRoute.params as never);
               } else if (navigationRef.current) {
-                // If no previous route, navigate to Splash
                 navigationRef.current.reset({
                   index: 0,
                   routes: [{ name: 'Splash' }],
                 });
               }
-              return null; // Clear the previous route
+              return null;
             });
-            
+
             setTimeout(() => {
               isNavigatingRef.current = false;
             }, 500);
           }
         }
-        
+
         return connected;
       });
     });
 
     return () => {
+      if (offlineDebounceRef.current) {
+        clearTimeout(offlineDebounceRef.current);
+        offlineDebounceRef.current = null;
+      }
       unsubscribe();
     };
   }, []);

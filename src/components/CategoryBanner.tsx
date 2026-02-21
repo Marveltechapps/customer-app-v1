@@ -1,17 +1,19 @@
 import React, { useState, useRef, useMemo } from 'react';
-import { View, StyleSheet, ScrollView, Image, ImageSourcePropType, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
+import { View, StyleSheet, ScrollView, Image, ImageSourcePropType, NativeScrollEvent, NativeSyntheticEvent, TouchableOpacity } from 'react-native';
 import { getWindowDimensions, scale, getSpacing } from '../utils/responsive';
 
-interface BannerItem {
+export interface CategoryBannerItem {
   id: string;
   image: ImageSourcePropType;
+  link?: string | null;
 }
 
 interface CategoryBannerProps {
-  banners: BannerItem[];
+  banners: CategoryBannerItem[];
+  onBannerPress?: (banner: CategoryBannerItem) => void;
 }
 
-export default function CategoryBanner({ banners }: CategoryBannerProps) {
+export default function CategoryBanner({ banners, onBannerPress }: CategoryBannerProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const scrollViewRef = useRef<ScrollView>(null);
   
@@ -73,9 +75,15 @@ export default function CategoryBanner({ banners }: CategoryBannerProps) {
           decelerationRate="fast"
         >
           {banners.map((banner, index) => (
-            <View key={banner.id} style={[styles.bannerItem, { width: bannerWidth, height: bannerHeight }]}>
+            <TouchableOpacity
+              key={banner.id}
+              style={[styles.bannerItem, { width: bannerWidth, height: bannerHeight }]}
+              onPress={() => onBannerPress?.(banner)}
+              activeOpacity={onBannerPress ? 0.8 : 1}
+              disabled={!onBannerPress}
+            >
               <Image source={banner.image} style={[styles.bannerImage, { width: bannerWidth, height: bannerHeight }]} resizeMode="cover" />
-            </View>
+            </TouchableOpacity>
           ))}
         </ScrollView>
       </View>
